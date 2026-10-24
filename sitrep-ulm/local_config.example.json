@@ -1,0 +1,10 @@
+{
+  "work": {
+    "address": "Ulm, Hauptbahnhof", "lat": 48.399121, "lon": 9.984181,
+    "stationId": "de:08421:1008", "stationName": "Ulm, Hauptbahnhof",
+    "stationLat": 48.399121, "stationLon": 9.984181
+  },
+  "defaultMeds": [
+    { "id": "default-example", "name": "Example medication", "time": "08:00" }
+  ]
+}

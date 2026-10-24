@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<!-- Pinned to the Fairphone 6's layout width (1116 px panel ≈ 412 CSS px) instead of
+     device-width: the WebView scales this to fit whatever phone it runs on, so the
+     layout and font sizes look the same on a test phone as on the FP6 itself. -->
+<meta name="viewport" content="width=412,user-scalable=no">
+<title>Sitrep Ulm</title>
+<style>
+:root{--bg:#0B0E11;--text:#F5F9FC;--muted:#C3D0D8;--accent:#6FE0EC;
+--ok:#6FE39B;--caution:#FFC35C;--alert:#FF7A63;--tram:#FF8FB1;--train:#B9A7FF;
+--line:#232A31;--panel:#12171C;
+--mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+--sans:-apple-system,"Segoe UI",Roboto,sans-serif}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);overflow:hidden}
+/* Floating, background-free header — text floats over the map with the same
+   glow as the widgets, so there's no box height to get wrong on narrow phones. */
+#bar{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;
+flex-wrap:wrap;gap:.6rem;padding:calc(env(safe-area-inset-top,0px) + .5rem) .9rem .4rem;
+background:transparent;border:none;z-index:6;pointer-events:none;
+text-shadow:0 0 3px #000,0 0 6px #000,0 0 14px rgba(0,0,0,.95),1px 1px 1px #000,-1px -1px 1px #000,
+1px -1px 1px #000,-1px 1px 1px #000}
+#bar>*{pointer-events:auto}
+#bar .brand{font-family:var(--mono);color:var(--accent);font-weight:600;font-size:1rem}
+#bar button{background:none;border:none;color:var(--muted);font-size:.95rem;
+cursor:pointer;padding:.3rem .5rem;border-bottom:2px solid transparent;text-shadow:inherit}
+#bar button.on{color:var(--text);border-bottom-color:var(--accent)}
+#bar .right{margin-left:auto;font-family:var(--mono);font-size:.92rem;color:var(--muted);
+display:flex;gap:.3rem;align-items:center}
+.view{position:absolute;inset:0;display:none}
+.view.on{display:block}
+/* Map starts below the header: Windy draws its own overlay picker and zoom
+   buttons top-right, which otherwise sit under the header text. */
+iframe{position:absolute;left:0;right:0;bottom:0;top:calc(env(safe-area-inset-top,0px) + 2.6rem);
+width:100%;height:calc(100% - env(safe-area-inset-top,0px) - 2.6rem);border:0}
+#scrim{position:absolute;inset:0;pointer-events:none;
+background:radial-gradient(ellipse at center,transparent 30%,rgba(11,14,17,.45) 100%)}
+/* Each widget sits in a semi-transparent, lightly blurred box so it reads over
+   any part of the map; the heavy text glow the box-less design needed is gone. */
+.drag{position:absolute;z-index:3;cursor:grab;touch-action:none;user-select:none;max-width:48%;
+background:rgba(11,14,17,.62);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
+border:1px solid rgba(255,255,255,.09);border-radius:12px;padding:.35rem .75rem .4rem;
+box-shadow:0 2px 12px rgba(0,0,0,.35);text-shadow:0 1px 2px rgba(0,0,0,.6)}
+.drag:active{cursor:grabbing}
+.lbl{font-family:var(--mono);font-size:.85rem;color:var(--muted);margin-bottom:.2rem;
+display:flex;align-items:center;flex-wrap:wrap;gap:.1rem .4rem}
+.ttl{font-family:var(--sans);font-weight:600;color:var(--accent);font-size:.85rem;letter-spacing:.01em}
+.sub{color:var(--muted);font-size:.8rem}
+.sub::before{content:"· "}
+.hint{font-family:var(--sans);font-size:.75rem;color:var(--muted);opacity:.8;margin-top:.15rem}
+.later{border-top:1px solid rgba(255,255,255,.12);margin-top:.35rem;padding-top:.3rem}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted);display:inline-block;flex:none}
+.dot.ok{background:var(--ok)}.dot.err{background:var(--alert)}
+.big{font-family:var(--mono);font-size:2.6rem;font-weight:600}
+.md{font-family:var(--mono);font-size:1.4rem;font-weight:600}
+.sm{font-family:var(--mono);font-size:1rem;color:var(--muted)}
+.acc{color:var(--accent)}.cau{color:var(--caution)}.okc{color:var(--ok)}.alc{color:var(--alert)}
+.ln{font-family:var(--mono);font-weight:600;color:var(--accent)}
+.ln.TRAM{color:var(--tram)}.ln.TRAIN{color:var(--train)}
+.row{font-size:1.1rem;line-height:1.55;white-space:nowrap}
+.step{font-size:1rem;line-height:1.45;white-space:normal;margin:.1rem 0}
+@media (min-width:900px){ .big{font-size:3.2rem} .md{font-size:1.7rem} .row{font-size:1.3rem} }
+@media (max-width:480px){
+  /* Portrait: all boxes share one width so the stacked column reads as a list. */
+  .drag{max-width:none;width:92%}
+  .row{white-space:normal;font-size:1rem;line-height:1.32}
+  .big{font-size:1.9rem}
+  .md{font-size:1.1rem}
+  .sm{font-size:.85rem}
+  /* FP6 width: header must stay one line; the big clock widget already shows the time. */
+  #bar{gap:.2rem;flex-wrap:nowrap}
+  #bar #clock{display:none}
+  /* Room for ⚙ and the manual-mode 📍 button; the tabs already say what this is. */
+  #bar .brand{display:none}
+}
+
+/* ---- home setup sheet (the one place boxes are fine: it's a form, not a widget) ---- */
+.sheet{position:absolute;inset:0;z-index:10;background:rgba(0,0,0,.55);display:none;
+align-items:flex-end;justify-content:center}
+.sheet.on{display:flex}
+.sheet .in{background:var(--panel);border-top:1px solid var(--line);width:100%;max-width:560px;
+max-height:88%;overflow:auto;padding:1rem 1rem calc(env(safe-area-inset-bottom,0px) + 1rem);
+border-radius:14px 14px 0 0}
+.sheet h2{font-family:var(--mono);font-size:1rem;color:var(--accent);margin:0 0 .6rem;
+display:flex;align-items:center}
+.sheet h2 button{margin-left:auto}
+.sheet label{display:block;font-family:var(--mono);font-size:.8rem;color:var(--muted);margin:.8rem 0 .3rem}
+.sheet .srow{display:flex;gap:.5rem;align-items:center}
+.sheet input{flex:1;min-width:0;background:var(--bg);color:var(--text);border:1px solid var(--line);
+border-radius:8px;padding:.65rem .7rem;font-size:1rem;color-scheme:dark}
+.sheet input:focus{outline:2px solid var(--accent);outline-offset:-1px}
+.sheet button{background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px;
+padding:.6rem .9rem;font-size:.95rem;cursor:pointer}
+.sheet button.primary{background:var(--accent);color:#06181b;border-color:var(--accent);font-weight:600}
+.sheet button:disabled{opacity:.4}
+.sheet .opt{display:block;width:100%;text-align:left;margin:.3rem 0;padding:.55rem .7rem}
+.sheet .opt.sel{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}
+.sheet .opt small{display:block;color:var(--muted);font-family:var(--mono);font-size:.75rem;margin-top:.1rem}
+.sheet .cur{font-size:.9rem;color:var(--muted);line-height:1.4}
+.sheet .actions{display:flex;gap:.5rem;margin-top:1rem}
+.sheet .actions .primary{flex:1}
+.sheet .msg{font-family:var(--mono);font-size:.85rem;color:var(--muted);margin:.4rem 0}
+.sheet .medrow{margin-top:.6rem}
+.sheet .medrow input[type=time]{flex:none;width:7.2rem}
+.sheet .medrow .rm{flex:none;padding:.6rem .75rem}
+/* "taken" button inside the medication widget — the one control on the map layer */
+.tk{font-family:var(--mono);font-size:.85rem;background:rgba(11,14,17,.75);color:var(--ok);
+border:1px solid var(--ok);border-radius:6px;padding:.15rem .5rem;margin-left:.3rem;cursor:pointer;text-shadow:none}
+</style></head><body>
+
+<div id="bar">
+  <span class="brand">Sitrep</span>
+  <button data-v="1" class="on">Summary</button>
+  <button data-v="2">Map</button>
+  <span class="right">
+    <button id="medBtn" title="Edit daily medication" aria-label="Medication">&#128138;</button>
+    <button id="homeBtn" title="Set home address and station">&#8962; Home</button>
+    <!-- Manual location mode only: shows when the position was taken; tap to update it. -->
+    <button id="locBtn" title="Refresh location" style="display:none">&#128205;</button>
+    <button id="setBtn" title="Settings" aria-label="Settings">&#9881;</button>
+    <span id="clock"></span>
+  </span>
+</div>
+
+<div class="view on" id="v1">
+  <div id="map1"></div><div id="scrim"></div>
+  <div class="drag" id="w-weather" style="left:4%;top:8%"></div>
+  <div class="drag" id="w-transit" style="left:55%;top:8%"></div>
+  <div class="drag" id="w-clock" style="left:37%;top:6%"></div>
+  <div class="drag" id="w-rain" style="left:30%;top:42%"></div>
+  <div class="drag" id="w-meds" style="left:55%;top:42%"></div>
+  <div class="drag" id="w-home" style="left:4%;top:66%"></div>
+  <div class="drag" id="w-work" style="left:55%;top:66%"></div>
+</div>
+
+<div class="view" id="v2"><div id="map2"></div></div>
+
+<div id="sheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+  <div class="in">
+    <h2><span id="sheetTitle">Home</span><button id="sheetClose" aria-label="Close">&#10005;</button></h2>
+    <div class="cur" id="homeCur"></div>
+    <label for="addrIn">Home address</label>
+    <form class="srow" id="addrForm">
+      <input id="addrIn" autocomplete="street-address" enterkeyhint="search"
+             placeholder="e.g. Münsterplatz, Ulm">
+      <button type="submit">Search</button>
+    </form>
+    <div id="addrRes"></div>
+    <div id="stWrap" style="display:none">
+      <label>Station to route home to</label>
+      <div id="stRes"></div>
+    </div>
+    <div class="actions">
+      <button class="primary" id="homeSave" disabled>Save home</button>
+      <button id="homeClear">Clear</button>
+    </div>
+  </div>
+</div>
+
+<div id="setSheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="setTitle">
+  <div class="in">
+    <h2><span id="setTitle">Settings</span><button id="setClose" aria-label="Close">&#10005;</button></h2>
+    <label>Location updates</label>
+    <button type="button" class="opt" data-mode="auto">Automatic
+      <small>Quick Wi-Fi/cell position with each update (screen on: every 5 min; screen off: every ~15 min), plus one precise fix whenever you open the app. GPS in the background only when Wi-Fi/cell is too coarse, for at most 20 s.</small></button>
+    <button type="button" class="opt" data-mode="manual">Manual
+      <small>Position only changes when you tap &#128205; — here in the header or on the lock-screen notification. Lowest battery use.</small></button>
+    <label>Layout</label>
+    <button type="button" id="resetLayoutBtn">Reset map &amp; widget layout</button>
+  </div>
+</div>
+
+<div id="medSheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="medTitle">
+  <div class="in">
+    <h2><span id="medTitle">Daily medication</span><button id="medClose" aria-label="Close">&#10005;</button></h2>
+    <div class="cur">An alarm rings before each dose, even with the app closed. The next dose also shows on the lock screen.</div>
+    <div id="medRows"></div>
+    <button type="button" id="medAdd" style="margin-top:.5rem">+ Add medication</button>
+    <label for="medLead">Alarm, minutes before</label>
+    <div class="srow"><input id="medLead" type="number" inputmode="numeric" min="0" max="120" style="flex:none;width:6rem"></div>
+    <div class="msg" id="medMsg"></div>
+    <div class="actions">
+      <button class="primary" id="medSave">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let CFG = null;
+const $ = s => document.querySelector(s);
+const pad = n => String(n).padStart(2,'0');
+const hhmm = ms => { const d=new Date(ms); return pad(d.getHours())+':'+pad(d.getMinutes()); };
+const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// DING stop names carry the town ("Ulm Rathaus"); inside Ulm itself that's noise.
+// Neu-Ulm is kept — "Neu-Ulm Bahnhof" vs "Hauptbahnhof" is a real distinction.
+const short = s => String(s||'').replace(/^Ulm,?\s+/,'');
+
+async function api(p, opts){ const r = await fetch(p, opts); return r.json(); }
+
+/* ---- tabs ---- */
+document.querySelectorAll('#bar button[data-v]').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#bar button[data-v]').forEach(x=>x.classList.remove('on'));
+  document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); $('#v'+b.dataset.v).classList.add('on');
+  // The Map tab's animated wind map is only loaded while that tab is open: it
+  // used to load at startup and keep running hidden, costing data and CPU for a
+  // tab that's rarely opened.
+  $('#map2').innerHTML = b.dataset.v==='2' ? windy('wind',7,'true') : '';
+  if(b.dataset.v==='1') queueReflow(); // sizes can't be measured while the tab was hidden
+});
+setInterval(()=>{ const d=new Date(); $('#clock').textContent=pad(d.getHours())+':'+pad(d.getMinutes()); },1000);
+
+const DAY_NAMES=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const MONTH_NAMES=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function renderBigClock(){
+  const el=$('#w-clock'); const d=new Date();
+  let h = head('Time',1)+
+    '<div class="row"><span class="big">'+pad(d.getHours())+':'+pad(d.getMinutes())+'</span> '+
+    '<span class="sm">:'+pad(d.getSeconds())+'</span></div>';
+  if(expanded.clock){
+    const tzMin=-d.getTimezoneOffset(), tzH=Math.trunc(tzMin/60), tzM=Math.abs(tzMin%60);
+    const tz='UTC'+(tzMin>=0?'+':'-')+Math.abs(tzH)+(tzM?':'+pad(tzM):'');
+    const startOfYear=new Date(d.getFullYear(),0,1);
+    const dayOfYear=Math.floor((d-startOfYear)/86400000)+1;
+    const leap=(d.getFullYear()%4===0&&(d.getFullYear()%100!==0||d.getFullYear()%400===0));
+    h += '<div class="row sm">'+DAY_NAMES[d.getDay()]+' '+d.getDate()+' '+MONTH_NAMES[d.getMonth()]+' '+d.getFullYear()+' · '+tz+'</div>'+
+         '<div class="row sm">day '+dayOfYear+' of '+(leap?366:365)+'</div>';
+  }
+  el.innerHTML=h;
+}
+
+/* ---- portrait auto-stack ---- */
+// On a tall portrait phone (the Fairphone 6 is ~20:9) widgets form one column
+// under the header. Positions are measured, not fixed percentages: whenever a
+// box changes height (tapped open, more departures, a longer station name) the
+// ones below move down instead of being covered. A widget the user has dragged
+// is "pinned" and leaves the column; the rest close up around it.
+const STACK_ORDER = ['w-clock','w-weather','w-rain','w-meds','w-transit','w-home','w-work'];
+const STACK_GAP = 6;
+const isPortrait = () => window.innerHeight > window.innerWidth * 1.15;
+let reflowQueued = false;
+function reflow(){
+  reflowQueued = false;
+  const v = $('#v1'); const H = v.clientHeight;
+  if (!isPortrait() || !H) return; // landscape keeps the corner layout; hidden tab has no size
+  let y = $('#bar').getBoundingClientRect().bottom - v.getBoundingClientRect().top + STACK_GAP;
+  for (const id of STACK_ORDER) {
+    const el = document.getElementById(id);
+    if (el.dataset.pinned) continue;
+    el.style.left = '4%'; el.style.top = (y / H * 100) + '%';
+    y += el.getBoundingClientRect().height + STACK_GAP; // includes any pinch scale
+  }
+}
+function queueReflow(){ if (!reflowQueued) { reflowQueued = true; requestAnimationFrame(reflow); } }
+const stackObserver = new ResizeObserver(queueReflow);
+window.addEventListener('resize', queueReflow);
+
+function draggable(el, onTap){
+  const posKey='pos:'+el.id, scaleKey='scale:'+el.id;
+  try{ const s=JSON.parse(localStorage.getItem(posKey)); if(s){el.style.left=s.x+'%';el.style.top=s.y+'%';el.dataset.pinned='1';} }catch(e){}
+  stackObserver.observe(el);
+  let scale = 1; try { scale = parseFloat(localStorage.getItem(scaleKey)) || 1; } catch(e){}
+  el.style.transformOrigin = 'top left';
+  el.style.transform = 'scale('+scale+')';
+
+  // One pointer drags/taps; a second pointer pinches to scale the widget.
+  const pointers = new Map();
+  let st=null, moved=false, pinch=null, wasPinching=false;
+  const pinchDist = () => { const p=[...pointers.values()]; return Math.hypot(p[0].x-p[1].x, p[0].y-p[1].y); };
+
+  el.addEventListener('pointerdown',e=>{
+    if(e.target.tagName==='BUTTON') return;
+    el.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+    if(pointers.size===2){
+      st=null;
+      pinch = { startDist: pinchDist(), startScale: scale };
+      wasPinching = true;
+    } else if(pointers.size===1 && !wasPinching){
+      const p=el.parentElement.getBoundingClientRect();
+      st={x:e.clientX,y:e.clientY,l:parseFloat(el.style.left),t:parseFloat(el.style.top),w:p.width,h:p.height};
+      moved=false;
+    }
+  });
+  el.addEventListener('pointermove',e=>{
+    if(!pointers.has(e.pointerId)) return;
+    pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+    if(pinch && pointers.size===2){
+      scale = Math.max(0.5, Math.min(2.2, pinch.startScale * (pinchDist()/pinch.startDist)));
+      el.style.transform = 'scale('+scale+')';
+      return;
+    }
+    if(!st) return;
+    const dx=e.clientX-st.x, dy=e.clientY-st.y;
+    // Pin as soon as it's really a drag, so the auto-stack stops placing it.
+    if(Math.abs(dx)>4||Math.abs(dy)>4){ moved=true; el.dataset.pinned='1'; }
+    const nx=Math.max(0,Math.min(95,st.l+dx/st.w*100));
+    const ny=Math.max(0,Math.min(94,st.t+dy/st.h*100));
+    el.style.left=nx+'%'; el.style.top=ny+'%';
+  });
+  const end=e=>{
+    // A press that started on a button inside the widget was never tracked; without
+    // this it would still count as a tap, re-render, and swallow the button's click.
+    if(!pointers.has(e.pointerId)) return;
+    pointers.delete(e.pointerId);
+    if(pointers.size<2) pinch=null;
+    if(pointers.size===0){
+      try{
+        // Only an actual drag pins a position. Saving on plain taps froze every
+        // tapped widget in place, so later default-layout changes never reached it.
+        if(st && moved) localStorage.setItem(posKey,JSON.stringify({x:parseFloat(el.style.left),y:parseFloat(el.style.top)}));
+        localStorage.setItem(scaleKey, String(scale));
+      }catch(e){}
+      if(!moved && !wasPinching && onTap) onTap();
+      if(moved) queueReflow(); // the column closes the gap this widget left
+      st=null; moved=false; wasPinching=false;
+    }
+  };
+  el.addEventListener('pointerup',end); el.addEventListener('pointercancel',end);
+}
+const expanded = {weather:false, transit:false, clock:false, rain:false, home:false, work:false, meds:false};
+// NanoHTTPD decodes bodies as ASCII unless told otherwise, which mangles "ß" in addresses.
+const JSON_HDR = {'Content-Type':'application/json; charset=utf-8'};
+
+/* ---- widgets ---- */
+function dot(ok){ return '<span class="dot '+(ok?'ok':'err')+'"></span>'; }
+// Every widget opens with a plain title saying what it shows, plus (where it
+// applies) the place it's about — a station or town name.
+function head(title, ok, sub){
+  return '<div class="lbl">'+dot(ok)+'<span class="ttl">'+esc(title)+'</span>'+
+    (sub ? '<span class="sub">'+esc(sub)+'</span>' : '')+'</div>';
+}
+const lineTag = (line, type) => '<span class="ln '+esc(type||'')+'">'+esc(line)+'</span>';
+
+let lastWeather=null;
+async function tickWeather(){
+  const el=$('#w-weather');
+  try{ const d=await api('/api/weather');
+    if(d.error) throw new Error(d.error);
+    lastWeather=d; renderWeather();
+  }catch(e){ el.innerHTML=head('Whether',0,CFG.city)+'<div class="sm">'+esc(e.message)+'</div>'; }
+}
+function renderWeather(){
+  const el=$('#w-weather'), d=lastWeather; if(!d) return;
+  let h = head('Whether',1,CFG.city)+
+    '<div class="row"><span class="big">'+d.temp+'°</span> <span class="sm">'+d.precip+' mm · '+esc(d.desc)+'</span></div>';
+  if(expanded.weather){
+    h += '<div class="row sm">feels '+d.feels+'° · '+d.humidity+'% humidity · '+d.cloud+'% cloud</div>'+
+         '<div class="row sm">wind '+d.windDir+'° '+d.windSpeed+' km/h, gusts '+d.windGust+' · '+d.pressure+' hPa</div>';
+  }
+  el.innerHTML=h;
+  renderRain();
+}
+
+function renderRain(){
+  const el=$('#w-rain'), d=lastWeather; if(!d) return;
+  let h = head('Rain, next 12 hours',1);
+  if(d.rainExpected){
+    h += '<div class="row"><span class="big alc">&#9748; rain in '+d.rainIn+'h</span> '+
+         '<span class="sm">'+d.rainMaxProb+'% · '+d.rainTotal+' mm</span></div>';
+  } else {
+    h += '<div class="row"><span class="big okc">no rain</span> <span class="sm">'+d.rainMaxProb+'% max chance</span></div>';
+  }
+  if(expanded.rain){
+    h += '<div class="row sm" style="white-space:normal">'+
+      d.rainHours.map(x=>x.t+' '+x.prob+'%/'+x.mm+'mm').join(' &nbsp; ')+'</div>';
+  }
+  el.innerHTML=h;
+}
+
+let lastTransit=null;
+async function tickTransit(){
+  const el=$('#w-transit');
+  try{ const d=await api('/api/transit');
+    if(d.error) throw new Error(d.error);
+    lastTransit=d; renderTransit();
+  }catch(e){ el.innerHTML=head('Nearby departing transport',0)+'<div class="sm">'+esc(e.message)+'</div>'; }
+}
+function renderTransit(){
+  const el=$('#w-transit'), d=lastTransit; if(!d) return;
+  const list = expanded.transit ? d.next : d.perLine.slice(0,3);
+  let h=head('Nearby departing transport',1,short(d.station));
+  if(!list.length){
+    h += '<div class="sm">no departures nearby</div>';
+  } else {
+    list.forEach(r=>{
+      const late = r.cancelled ? '<span class="alc"> cancelled</span>'
+                 : r.delay>0 ? '<span class="cau"> +'+r.delay+'</span>' : '';
+      h+='<div class="row">'+lineTag(r.line,r.type)+' '+esc(short(r.dest))+
+         ' <span class="md">'+hhmm(r.at)+'</span>'+late+
+         (expanded.transit && d.stops.length>1 ? ' <span class="sm">'+esc(short(r.stop))+'</span>' : '')+'</div>';
+    });
+  }
+  el.innerHTML=h;
+}
+
+/* ---- route guides: home (user-set) and work (fixed, from local_config.json) ---- */
+// One renderer for both; each has its own endpoint, widget and state.
+const ROUTES = {
+  home: {el:'#w-home', api:'/api/route', title:'Best way home', there:'you\'re home',
+         place:()=>CFG.home, last:null, err:null},
+  work: {el:'#w-work', api:'/api/route_work', title:'Best way to work', there:'you\'re at work',
+         place:()=>CFG.work, last:null, err:null},
+};
+async function tickRoute(key){
+  const R=ROUTES[key];
+  if(!R.place()){ R.last=null; R.err=null; renderRoute(key); return; }
+  try{ const d=await api(R.api);
+    if(d.error){ R.err=d.error; } else { R.last=d; R.err=null; }
+  }catch(e){ R.err=e.message; }
+  renderRoute(key);
+}
+function renderRoute(key){
+  const R=ROUTES[key], el=$(R.el), place=R.place();
+  if(!place){
+    el.innerHTML=head(R.title,0)+
+      '<div class="row sm" style="white-space:normal">no home set — tap <span class="acc">&#8962; Home</span> above</div>';
+    return;
+  }
+  const top = head(R.title,!R.err,short(place.stationName));
+  const rt = R.last;
+  if(!rt){ el.innerHTML=top+'<div class="sm">'+esc(R.err||'planning route…')+'</div>'; return; }
+  if(rt.atDest){ el.innerHTML=top+'<div class="row"><span class="md okc">'+R.there+'</span></div>'; return; }
+  // Only the first vehicle's departure — no walking legs or door-to-door times.
+  let h=top+routeOption(rt.best, true);
+  if(expanded[key]){
+    h+='<div class="later">'+(rt.later.length
+      ? '<div class="sm">later options</div>'+rt.later.map(o=>routeOption(o,false)).join('')
+      : '<div class="sm">no later options found</div>')+'</div>';
+    if(R.err) h+='<div class="step sm alc">'+esc(R.err)+'</div>';
+  } else if(rt.later.length){
+    h+='<div class="hint">tap for later options</div>';
+  }
+  el.innerHTML=h;
+}
+// One option: lines to take, when the first one leaves (and from where), when you arrive.
+function routeOption(o, main){
+  if(o.walkOnly) return '<div class="row"><span class="md">walking distance</span></div>';
+  const chain = o.lines.map(l=>lineTag(l.line,l.type)).join(' <span class="sm">&rarr;</span> ');
+  const late = o.delay>0 ? ' <span class="cau">+'+o.delay+'</span>' : '';
+  const pl = o.platform ? ', '+esc(o.platform) : '';
+  if(main){
+    return '<div class="row">'+chain+'</div>'+
+      '<div class="row"><span class="md">'+hhmm(o.depAt)+'</span>'+late+
+      ' <span class="sm">from '+esc(short(o.from))+pl+'</span></div>'+
+      '<div class="row sm">arrive '+hhmm(o.arriveAt)+'</div>';
+  }
+  return '<div class="row"><span class="md">'+hhmm(o.depAt)+'</span>'+late+' '+chain+
+    ' <span class="sm">from '+esc(short(o.from))+' &middot; arr '+hhmm(o.arriveAt)+'</span></div>';
+}
+const renderHome = () => renderRoute('home');
+
+/* ---- medication (same shape as the old prayer widget: next dose + live countdown) ---- */
+let MEDS=null;
+async function loadMeds(){
+  try{ const d=await api('/api/meds'); if(!d.error) MEDS=d; }catch(e){}
+  renderMeds();
+}
+function renderMeds(){
+  const el=$('#w-meds');
+  if(!MEDS){ setMedHtml(el,head('Medication',0)+'<div class="sm">loading…</div>'); return; }
+  if(!MEDS.meds.some(m=>m.enabled)){
+    setMedHtml(el,head('Medication',0)+
+      '<div class="row sm" style="white-space:normal">none set — tap &#128138; above</div>');
+    return;
+  }
+  const n=MEDS.next;
+  let h=head('Medication',1);
+  if(n){
+    const left=n.at-Date.now();
+    // Next dose rolled over (its time passed a while ago, or it was just taken
+    // elsewhere): fetch the new "next" rather than count into the negative.
+    if(left < -2*3600000){ loadMeds(); return; }
+    let cd;
+    if(left<=0) cd='<span class="alc">due now</span>';
+    else if(left<=MEDS.lead*60000) cd='<span class="cau">in '+Math.ceil(left/60000)+' min</span>'; // minute steps: see setMedHtml
+    else {
+      const hh=Math.floor(left/3600000), m=Math.floor(left%3600000/60000), s=Math.floor(left%60000/1000);
+      cd='<span class="acc">'+(hh>0 ? hh+'h '+pad(m)+'m' : pad(m)+':'+pad(s))+'</span>';
+    }
+    const takeBtn = (left<=MEDS.lead*60000 && !n.taken)
+      ? '<button class="tk" data-id="'+esc(n.id)+'" data-date="'+esc(n.date)+'">&#10003; taken</button>' : '';
+    h+='<div class="row"><span class="md">'+esc(n.name)+'</span> '+cd+' <span class="sm">'+esc(n.time)+'</span>'+takeBtn+'</div>';
+  }
+  if(expanded.meds){
+    h+='<div class="row sm" style="white-space:normal">'+MEDS.today.map(d=>
+      (d.taken?'<span class="okc">&#10003;</span> ':'')+esc(d.name)+' '+esc(d.time)).join(' &nbsp;·&nbsp; ')+'</div>'+
+      '<div class="row sm">alarm '+MEDS.lead+' min before</div>';
+  }
+  setMedHtml(el,h);
+}
+// renderMeds runs every second; rewriting identical HTML would replace the
+// "taken" button mid-tap and lose the click. While that button shows, the
+// countdown only changes once a minute, so this leaves it alone.
+function setMedHtml(el,h){ if(el._h!==h){ el.innerHTML=h; el._h=h; } }
+$('#w-meds').addEventListener('click', async e=>{
+  const b=e.target.closest('.tk'); if(!b) return;
+  e.stopPropagation();
+  const d=await api('/api/meds/taken',{method:'POST',headers:JSON_HDR,
+    body:JSON.stringify({id:b.dataset.id,date:b.dataset.date})});
+  if(!d.error){ MEDS=d; renderMeds(); }
+});
+
+/* ---- medication editor ---- */
+function medRow(m){
+  const row=document.createElement('div');
+  row.className='srow medrow'; row.dataset.id=m.id||'';
+  row.innerHTML='<input class="mn" placeholder="Name, e.g. Vitamin D" value="'+esc(m.name||'')+'">'+
+    '<input class="mt" type="time" value="'+esc(m.time||'08:00')+'">'+
+    '<button type="button" class="rm" aria-label="Remove">&#10005;</button>';
+  row.querySelector('.rm').onclick=()=>row.remove();
+  return row;
+}
+function openMedSheet(){
+  const box=$('#medRows'); box.innerHTML='';
+  (MEDS&&MEDS.meds.length ? MEDS.meds : [{}]).forEach(m=>box.appendChild(medRow(m)));
+  $('#medLead').value = MEDS ? MEDS.lead : 10;
+  $('#medMsg').textContent='';
+  $('#medSheet').classList.add('on');
+}
+function closeMedSheet(){ $('#medSheet').classList.remove('on'); }
+$('#medBtn').onclick=openMedSheet;
+$('#medClose').onclick=closeMedSheet;
+$('#medSheet').addEventListener('click', e=>{ if(e.target.id==='medSheet') closeMedSheet(); });
+$('#medAdd').onclick=()=>{ const r=medRow({}); $('#medRows').appendChild(r); r.querySelector('.mn').focus(); };
+$('#medSave').onclick=async ()=>{
+  const meds=[...document.querySelectorAll('#medRows .medrow')].map(r=>({
+    id:r.dataset.id, name:r.querySelector('.mn').value.trim(), time:r.querySelector('.mt').value, enabled:true
+  })).filter(m=>m.name);
+  if(meds.some(m=>!/^\d\d:\d\d$/.test(m.time))){ $('#medMsg').textContent='every medication needs a time'; return; }
+  const lead=Math.max(0,Math.min(120,parseInt($('#medLead').value,10)||0));
+  const d=await api('/api/meds',{method:'POST',headers:JSON_HDR,body:JSON.stringify({lead,meds})});
+  if(d.error){ $('#medMsg').textContent=d.error; return; }
+  MEDS=d; closeMedSheet(); renderMeds();
+};
+
+/* ---- home setup sheet ---- */
+let pickAddr=null, pickStop=null;
+function openSheet(){
+  const hm=CFG.home;
+  $('#homeCur').innerHTML = hm
+    ? 'Current: <b>'+esc(hm.address)+'</b><br>Station: <b>'+esc(hm.stationName)+'</b>'
+    : 'Enter your home address. Sitrep will pick the nearest DING station and show the route there from wherever you are.';
+  $('#addrRes').innerHTML=''; $('#stRes').innerHTML=''; $('#stWrap').style.display='none';
+  pickAddr=null; pickStop=null; $('#homeSave').disabled=true;
+  $('#homeClear').style.display = hm ? '' : 'none';
+  $('#sheet').classList.add('on');
+  setTimeout(()=>$('#addrIn').focus(), 50);
+}
+function closeSheet(){ $('#sheet').classList.remove('on'); $('#addrIn').blur(); }
+window.sitrepBack = () => {
+  if($('#sheet').classList.contains('on')){ closeSheet(); return true; }
+  if($('#medSheet').classList.contains('on')){ closeMedSheet(); return true; }
+  if($('#setSheet').classList.contains('on')){ $('#setSheet').classList.remove('on'); return true; }
+  return false;
+};
+
+$('#addrForm').onsubmit = async e => {
+  e.preventDefault();
+  const q=$('#addrIn').value.trim(); if(!q) return;
+  const out=$('#addrRes');
+  out.innerHTML='<div class="msg">searching…</div>';
+  $('#stWrap').style.display='none'; pickAddr=null; pickStop=null; $('#homeSave').disabled=true;
+  try{
+    const d=await api('/api/geocode?q='+encodeURIComponent(q));
+    if(d.error) throw new Error(d.error);
+    if(!d.results.length){ out.innerHTML='<div class="msg">nothing found — try adding "Ulm" or the postcode</div>'; return; }
+    const kind = {singlehouse:'address', street:'street', stop:'station', poi:'place', locality:'town', suburb:'district'};
+    out.innerHTML = d.results.map((r,i)=>'<button type="button" class="opt" data-i="'+i+'">'+esc(r.name)+
+      '<small>'+esc(kind[r.type]||r.type)+'</small></button>').join('');
+    out.querySelectorAll('.opt').forEach(b=>b.onclick=()=>{
+      out.querySelectorAll('.opt').forEach(x=>x.classList.remove('sel')); b.classList.add('sel');
+      pickAddress(d.results[+b.dataset.i]);
+    });
+  }catch(err){ out.innerHTML='<div class="msg alc">'+esc(err.message)+'</div>'; }
+};
+
+async function pickAddress(r){
+  pickAddr=r; pickStop=null; $('#homeSave').disabled=true;
+  $('#stWrap').style.display='';
+  const out=$('#stRes'); out.innerHTML='<div class="msg">finding stations…</div>';
+  try{
+    const d=await api('/api/stops_near?lat='+r.lat+'&lon='+r.lon);
+    if(d.error) throw new Error(d.error);
+    let stops=d.stops;
+    // If the search hit was itself a station, offer exactly that one first.
+    if(r.type==='stop' && !stops.some(s=>s.id===r.id))
+      stops=[{id:r.id,name:r.name,lat:r.lat,lon:r.lon,distance:0}].concat(stops);
+    if(!stops.length){ out.innerHTML='<div class="msg">no stations within 1.5 km</div>'; return; }
+    out.innerHTML = stops.map((s,i)=>'<button type="button" class="opt'+(i===0?' sel':'')+'" data-i="'+i+'">'+
+      esc(s.name)+'<small>'+(s.distance? s.distance+' m from address' : 'this station')+'</small></button>').join('');
+    pickStop=stops[0]; $('#homeSave').disabled=false;
+    out.querySelectorAll('.opt').forEach(b=>b.onclick=()=>{
+      out.querySelectorAll('.opt').forEach(x=>x.classList.remove('sel')); b.classList.add('sel');
+      pickStop=stops[+b.dataset.i];
+    });
+  }catch(err){ out.innerHTML='<div class="msg alc">'+esc(err.message)+'</div>'; }
+}
+
+$('#homeSave').onclick = async ()=>{
+  if(!pickAddr||!pickStop) return;
+  const body={address:pickAddr.name, lat:pickAddr.lat, lon:pickAddr.lon,
+    stationId:pickStop.id, stationName:pickStop.name, stationLat:pickStop.lat, stationLon:pickStop.lon};
+  const c=await api('/api/home',{method:'POST',headers:JSON_HDR,body:JSON.stringify(body)});
+  if(c.error){ $('#stRes').insertAdjacentHTML('beforeend','<div class="msg alc">'+esc(c.error)+'</div>'); return; }
+  CFG=c; ROUTES.home.last=null; closeSheet(); renderHome(); tickRoute('home');
+};
+$('#homeClear').onclick = async ()=>{
+  CFG = await api('/api/home/clear',{method:'POST'}); ROUTES.home.last=null; closeSheet(); renderHome();
+};
+$('#sheetClose').onclick = closeSheet;
+$('#sheet').addEventListener('click', e=>{ if(e.target.id==='sheet') closeSheet(); });
+$('#homeBtn').onclick = openSheet;
+
+/* ---- boot ---- */
+function windy(ov,z,inter){
+  return '<iframe src="https://embed.windy.com/embed2.html?lat='+CFG.lat+
+    '&lon='+CFG.lon+'&detailLat='+CFG.lat+'&detailLon='+CFG.lon+'&zoom='+z+
+    '&level=surface&overlay='+ov+'&menu=&message='+inter+'&marker=true&calendar=now'+
+    '&pressure=true&type=map&location=coordinates&metricWind=default&metricTemp=default"></iframe>';
+}
+// 'temp' rather than 'radar': radar is flat grey most of the time, which makes
+// the text drawn over it harder to read.
+const MAP1_OVERLAY = 'temp';
+
+// Notices when the position moved ~1 km+ and recentres the backdrop.
+async function tickConfig(c){
+  try{
+    c = c || await api('/api/config');
+    if(c.error) return;
+    const moved = CFG && (Math.abs(c.lat-CFG.lat)>0.01 || Math.abs(c.lon-CFG.lon)>0.01);
+    CFG = c;
+    if(moved) $('#map1').innerHTML = windy(MAP1_OVERLAY,9,'false');
+    applyLocUi();
+  }catch(e){}
+}
+
+/* ---- location mode + refresh ---- */
+function applyLocUi(){
+  const manual = CFG.locMode==='manual', b=$('#locBtn');
+  b.style.display = manual ? '' : 'none';
+  if(manual && !b.disabled) b.textContent = '\u{1F4CD} '+(CFG.locAt ? hhmm(CFG.locAt) : '?');
+  document.querySelectorAll('#setSheet .opt').forEach(o=>o.classList.toggle('sel', o.dataset.mode===CFG.locMode));
+}
+function tickAll(){
+  tickWeather(); tickTransit(); loadMeds();
+  for (const k of Object.keys(ROUTES)) tickRoute(k);
+}
+// Takes one fresh fix (GPS + network, ≤20 s), then reloads everything that depends on position.
+async function refreshLocation(){
+  const b=$('#locBtn');
+  // HyperOS can resume the activity twice when unlocking; one fix is enough.
+  if(b.disabled) return;
+  b.disabled=true; b.textContent='\u{1F4CD} …';
+  try{ const c=await api('/api/refresh',{method:'POST'}); b.disabled=false; await tickConfig(c);
+       if(!c.refreshed && CFG.locMode==='manual') b.textContent='\u{1F4CD} failed'; }
+  catch(e){ b.disabled=false; applyLocUi(); }
+  tickAll();
+}
+$('#locBtn').onclick = refreshLocation;
+// Called by MainActivity.onResume: timers were frozen while the app was away.
+window.sitrepResume = () => {
+  if(!CFG) return;
+  tickAll(); tickConfig();
+  if(CFG.locMode==='auto') refreshLocation(); // one precise fix per app open
+};
+
+/* ---- settings sheet ---- */
+$('#setBtn').onclick = ()=>{ applyLocUi(); $('#setSheet').classList.add('on'); };
+$('#setClose').onclick = ()=>$('#setSheet').classList.remove('on');
+$('#setSheet').addEventListener('click', e=>{ if(e.target.id==='setSheet') $('#setSheet').classList.remove('on'); });
+document.querySelectorAll('#setSheet .opt').forEach(o=>o.onclick=async ()=>{
+  const c=await api('/api/settings',{method:'POST',headers:JSON_HDR,body:JSON.stringify({locMode:o.dataset.mode})});
+  if(!c.error){ CFG=c; applyLocUi(); }
+});
+// Resets the map and every widget's dragged position / pinch scale back to the
+// default stack; a reload is the simplest way to re-run all of that setup.
+$('#resetLayoutBtn').onclick = ()=>{
+  try{ Object.keys(localStorage).filter(k=>/^(pos|scale):/.test(k)).forEach(k=>localStorage.removeItem(k)); }catch(e){}
+  location.reload();
+};
+
+(async function(){
+  CFG = await api('/api/config');
+  $('#map1').innerHTML = windy(MAP1_OVERLAY,9,'false');
+  applyLocUi();
+  // First open: the activity's onResume ran before this page existed, so take
+  // the automatic-mode precise fix here instead.
+  if(CFG.locMode==='auto') setTimeout(refreshLocation, 1500);
+
+
+  draggable($('#w-weather'), ()=>{ expanded.weather=!expanded.weather; renderWeather(); });
+  draggable($('#w-transit'), ()=>{ expanded.transit=!expanded.transit; renderTransit(); });
+  draggable($('#w-clock'),   ()=>{ expanded.clock=!expanded.clock; renderBigClock(); });
+  draggable($('#w-rain'),    ()=>{ expanded.rain=!expanded.rain; renderRain(); });
+  draggable($('#w-home'),    ()=>{ expanded.home=!expanded.home; renderRoute('home'); if(expanded.home) tickRoute('home'); });
+  draggable($('#w-work'),    ()=>{ expanded.work=!expanded.work; renderRoute('work'); if(expanded.work) tickRoute('work'); });
+  draggable($('#w-meds'),    ()=>{ expanded.meds=!expanded.meds; renderMeds(); });
+
+  // First launch with no home set: open the setup sheet once, unprompted.
+  let prompted=false; try{ prompted=!!localStorage.getItem('homePrompted'); localStorage.setItem('homePrompted','1'); }catch(e){}
+  if(!CFG.home && !prompted) openSheet();
+
+  // Cadence: weather barely moves; live departures matter most; the route home
+  // is realtime-aware but only needs to track position (≥8-min updates) and delays.
+  setInterval(tickConfig, 120000);
+  tickWeather(); setInterval(tickWeather, 900000);
+  tickTransit(); setInterval(tickTransit, 30000);
+  for (const k of Object.keys(ROUTES)) {
+    tickRoute(k); setInterval(()=>tickRoute(k), 120000);
+    setInterval(()=>renderRoute(k), 15000); // keeps "leave in N min" honest between fetches
+  }
+  // Re-fetch often and on return to the app, so a "Taken" tapped on the alarm
+  // notification (which doesn't go through this page) shows up promptly.
+  loadMeds(); setInterval(loadMeds, 60000);
+  // All of these timers are frozen while the app is off screen (MainActivity
+  // pauses the WebView); sitrepResume() catches up when it's back.
+  setInterval(renderMeds, 1000);
+  renderBigClock(); setInterval(renderBigClock, 1000);
+})();
+</script></body></html>

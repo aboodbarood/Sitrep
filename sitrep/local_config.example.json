@@ -1,0 +1,7 @@
+{
+  "city": "Munich", "lat": 48.1374, "lon": 11.5755,
+  "transit_queries": ["Marienplatz"], "transit_place": "München", "station_label": "Marienplatz",
+  "lines": [],
+  "icao": "EDDM", "avwx_token": "",
+  "prayer_method": 3
+}

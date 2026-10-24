@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sitrep</title>
+<style>
+:root{--bg:#0B0E11;--text:#F5F9FC;--muted:#C3D0D8;--accent:#6FE0EC;
+--ok:#6FE39B;--caution:#FFC35C;--alert:#FF7A63;
+--mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+--sans:-apple-system,"Segoe UI",Roboto,sans-serif}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);overflow:hidden}
+/* Floating, background-free header — a fixed-height boxed bar clipped its own
+   text once labels wrapped to two lines on narrow phones. Text just floats
+   over the content instead, same glow treatment as the .drag widgets, so
+   there's no box height to get wrong. */
+#bar{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;
+flex-wrap:wrap;gap:1rem;padding:calc(env(safe-area-inset-top,0px) + .5rem) .9rem .4rem;
+background:transparent;border:none;z-index:6;pointer-events:none;
+text-shadow:0 0 3px #000,0 0 6px #000,0 0 14px rgba(0,0,0,.95),1px 1px 1px #000,-1px -1px 1px #000,
+1px -1px 1px #000,-1px 1px 1px #000}
+#bar>*{pointer-events:auto}
+#bar .brand{font-family:var(--mono);color:var(--accent);font-weight:600;font-size:1rem}
+#bar button{background:none;border:none;color:var(--muted);font-size:.95rem;
+cursor:pointer;padding:.3rem .6rem;border-bottom:2px solid transparent}
+#bar button.on{color:var(--text);border-bottom-color:var(--accent)}
+#bar .right{margin-left:auto;font-family:var(--mono);font-size:.92rem;color:var(--muted);
+display:flex;gap:.7rem;align-items:center}
+.view{position:absolute;inset:0;display:none}
+.view.on{display:block}
+#v3{padding-top:calc(env(safe-area-inset-top,0px) + 3.2rem) !important}
+iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+#scrim{position:absolute;inset:0;pointer-events:none;
+background:radial-gradient(ellipse at center,transparent 30%,rgba(11,14,17,.45) 100%)}
+#flightOverlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+.drag{position:absolute;z-index:3;cursor:grab;touch-action:none;user-select:none;
+text-shadow:0 0 3px #000,0 0 6px #000,0 0 14px rgba(0,0,0,.95),1px 1px 1px #000,-1px -1px 1px #000,
+1px -1px 1px #000,-1px 1px 1px #000;max-width:48%}
+.drag:active{cursor:grabbing}
+.lbl{font-family:var(--mono);font-size:.85rem;color:var(--muted);margin-bottom:.15rem;
+display:flex;align-items:center;gap:.35rem}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted);display:inline-block}
+.dot.ok{background:var(--ok)}.dot.err{background:var(--alert)}
+.big{font-family:var(--mono);font-size:2.6rem;font-weight:600}
+.md{font-family:var(--mono);font-size:1.4rem;font-weight:600}
+.sm{font-family:var(--mono);font-size:1rem;color:var(--muted)}
+.acc{color:var(--accent)}.cau{color:var(--caution)}.okc{color:var(--ok)}.alc{color:var(--alert)}
+.row{font-size:1.1rem;line-height:1.55;white-space:nowrap}
+#chime{background:none;border:none;color:var(--muted);cursor:pointer;font-size:.9rem}
+table{border-collapse:collapse;font-family:var(--mono);font-size:.9rem;width:100%}
+th,td{text-align:left;padding:.3rem .5rem;border-bottom:1px solid #232A31}
+th{color:var(--muted);font-weight:400}
+#v3{padding:1rem;overflow:auto}
+#radar{max-width:340px;width:100%;display:block;margin:0 auto 1rem}
+.ring{fill:none;stroke:#232A31}.blip{fill:var(--accent)}.gnd{fill:var(--muted)}
+.fblip{fill:var(--caution);stroke:#0B0E11;stroke-width:.75px}
+.fgnd{fill:var(--muted);stroke:#0B0E11;stroke-width:.75px}
+.ring-label{font-family:var(--mono);font-size:11px;fill:var(--muted);text-anchor:start}
+@media (min-width:900px){ .big{font-size:3.2rem} .md{font-size:1.7rem} .row{font-size:1.3rem} }
+@media (max-width:480px){
+  .drag{max-width:92%}
+  .row{white-space:normal;font-size:1rem;line-height:1.4}
+  .big{font-size:1.9rem}
+  .md{font-size:1.1rem}
+  .sm{font-size:.85rem}
+}
+</style></head><body>
+
+<div id="bar">
+  <span class="brand">Sitrep</span>
+  <button data-v="1" class="on">Summary</button>
+  <button data-v="2">Weather Map</button>
+  <button data-v="3">Traffic</button>
+  <span class="right"><button id="resetMapBtn" title="Reset Summary map to its default position, zoom and overlay">&#8635; reset view</button><button id="refreshFlightsBtn" title="Refresh flight traffic now" style="display:none">&#8635; refresh</button><span id="clock"></span></span>
+</div>
+
+<div class="view on" id="v1">
+  <div id="map1"></div><div id="scrim"></div>
+  <svg id="flightOverlay"><g id="fblips2"></g></svg>
+  <div class="drag" id="w-weather" style="left:4%;top:6%"></div>
+  <div class="drag" id="w-transit" style="left:55%;top:6%"></div>
+  <div class="drag" id="w-clock" style="left:37%;top:4%"></div>
+  <div class="drag" id="w-atis" style="left:4%;top:84%"></div>
+  <div class="drag" id="w-prayer" style="left:55%;top:84%"></div>
+  <div class="drag" id="w-rain" style="left:30%;top:45%"></div>
+</div>
+
+<div class="view" id="v2"><div id="map2"></div></div>
+
+<div class="view" id="v3">
+  <svg id="radar" viewBox="0 0 400 400">
+    <circle cx="200" cy="200" r="190" class="ring"/>
+    <circle cx="200" cy="200" r="127" class="ring"/>
+    <circle cx="200" cy="200" r="63" class="ring"/>
+    <line x1="200" y1="10" x2="200" y2="390" class="ring"/>
+    <line x1="10" y1="200" x2="390" y2="200" class="ring"/>
+    <circle cx="200" cy="200" r="4" fill="#4FB8C4"/>
+    <text x="203" y="141" class="ring-label">25 km</text>
+    <text x="203" y="77" class="ring-label">50 km</text>
+    <text x="203" y="14" class="ring-label">75 km</text>
+    <g id="blips"></g>
+  </svg>
+  <div class="sm" style="text-align:center;margin:-.5rem 0 1rem;white-space:normal">
+    <span class="acc">&#9650;</span> airborne &nbsp; <span style="color:var(--muted)">&#9650;</span> on ground &nbsp;
+    — rings ~25/50/75&nbsp;km from your position (approximate)
+  </div>
+  <table><thead><tr><th>Callsign</th><th>Alt m</th><th>Spd</th><th>Hdg</th></tr></thead>
+  <tbody id="ftab"></tbody></table>
+</div>
+
+<script>
+let CFG = null;
+const $ = s => document.querySelector(s);
+const pad = n => String(n).padStart(2,'0');
+const hhmm = ms => { const d=new Date(ms); return pad(d.getHours())+':'+pad(d.getMinutes()); };
+
+async function api(p){ const r = await fetch(p); return r.json(); }
+
+/* ---- tabs ---- */
+document.querySelectorAll('#bar button[data-v]').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#bar button[data-v]').forEach(x=>x.classList.remove('on'));
+  document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); $('#v'+b.dataset.v).classList.add('on');
+  // The Weather Map tab's animated wind map only runs while that tab is open;
+  // it used to load at startup and keep running hidden.
+  $('#map2').innerHTML = b.dataset.v==='2' ? windy('wind',7,'true') : '';
+  $('#resetMapBtn').style.display = (b.dataset.v==='1') ? '' : 'none';
+  $('#refreshFlightsBtn').style.display = (b.dataset.v==='3') ? '' : 'none';
+});
+setInterval(()=>{ const d=new Date(); $('#clock').textContent=pad(d.getHours())+':'+pad(d.getMinutes()); },1000);
+
+const DAY_NAMES=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const MONTH_NAMES=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function renderBigClock(){
+  const el=$('#w-clock'); const d=new Date();
+  let h = '<div class="lbl">'+dot(1)+'Time</div>'+
+    '<div class="row"><span class="big">'+pad(d.getHours())+':'+pad(d.getMinutes())+'</span> '+
+    '<span class="sm">:'+pad(d.getSeconds())+'</span></div>';
+  if(expanded.clock){
+    const tzMin=-d.getTimezoneOffset(), tzH=Math.trunc(tzMin/60), tzM=Math.abs(tzMin%60);
+    const tz='UTC'+(tzMin>=0?'+':'-')+Math.abs(tzH)+(tzM?':'+pad(tzM):'');
+    const startOfYear=new Date(d.getFullYear(),0,1);
+    const dayOfYear=Math.floor((d-startOfYear)/86400000)+1;
+    h += '<div class="row sm">'+DAY_NAMES[d.getDay()]+' '+d.getDate()+' '+MONTH_NAMES[d.getMonth()]+' '+d.getFullYear()+' · '+tz+'</div>'+
+         '<div class="row sm">day '+dayOfYear+' of '+(365+( (d.getFullYear()%4===0&&(d.getFullYear()%100!==0||d.getFullYear()%400===0))?1:0 ))+'</div>';
+  }
+  el.innerHTML=h;
+}
+
+/* ---- drag + remember position; a tap (no movement) toggles detail via onTap ---- */
+// Widget defaults below assume a wide desktop screen. On a narrow portrait
+// phone the same six widgets spread across corners collide (long transit
+// destination names run into the clock, etc). Restack them single-file down
+// the left edge instead — but only as a first-run default, since draggable()
+// below still restores whatever the user last dragged to, on any device.
+const PORTRAIT_STACK = [
+  ['w-clock', 3], ['w-weather', 11], ['w-rain', 22],
+  ['w-transit', 34], ['w-atis', 50], ['w-prayer', 62],
+];
+function applyResponsiveDefaults(){
+  if (window.innerHeight <= window.innerWidth * 1.15) return; // not a narrow portrait screen
+  PORTRAIT_STACK.forEach(([id, top]) => {
+    if (localStorage.getItem('pos:'+id)) return; // user already picked a spot
+    const el = document.getElementById(id);
+    el.style.left = '4%'; el.style.top = top+'%';
+  });
+}
+
+function draggable(el, onTap){
+  const posKey='pos:'+el.id, scaleKey='scale:'+el.id;
+  try{ const s=JSON.parse(localStorage.getItem(posKey)); if(s){el.style.left=s.x+'%';el.style.top=s.y+'%';} }catch(e){}
+  let scale = parseFloat(localStorage.getItem(scaleKey)) || 1;
+  el.style.transformOrigin = 'top left';
+  el.style.transform = 'scale('+scale+')';
+
+  // Single pointer drags/taps as before. A second pointer switches to a pinch
+  // gesture that scales the whole widget (text, dot, everything) instead —
+  // tracked per-widget since draggable() is called once per widget element.
+  const pointers = new Map();
+  let st=null, moved=false, pinch=null, wasPinching=false;
+  const pinchDist = () => { const p=[...pointers.values()]; return Math.hypot(p[0].x-p[1].x, p[0].y-p[1].y); };
+
+  el.addEventListener('pointerdown',e=>{
+    if(e.target.tagName==='BUTTON') return;
+    el.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+    if(pointers.size===2){
+      st=null;
+      pinch = { startDist: pinchDist(), startScale: scale };
+      wasPinching = true;
+    } else if(pointers.size===1 && !wasPinching){
+      const p=el.parentElement.getBoundingClientRect();
+      st={x:e.clientX,y:e.clientY,l:parseFloat(el.style.left),t:parseFloat(el.style.top),w:p.width,h:p.height};
+      moved=false;
+    }
+  });
+  el.addEventListener('pointermove',e=>{
+    if(!pointers.has(e.pointerId)) return;
+    pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+    if(pinch && pointers.size===2){
+      scale = Math.max(0.5, Math.min(2.2, pinch.startScale * (pinchDist()/pinch.startDist)));
+      el.style.transform = 'scale('+scale+')';
+      return;
+    }
+    if(!st) return;
+    const dx=e.clientX-st.x, dy=e.clientY-st.y;
+    if(Math.abs(dx)>4||Math.abs(dy)>4) moved=true;
+    const nx=Math.max(0,Math.min(95,st.l+dx/st.w*100));
+    const ny=Math.max(0,Math.min(94,st.t+dy/st.h*100));
+    el.style.left=nx+'%'; el.style.top=ny+'%';
+  });
+  const end=e=>{
+    pointers.delete(e.pointerId);
+    if(pointers.size<2) pinch=null;
+    if(pointers.size===0){
+      if(st) localStorage.setItem(posKey,JSON.stringify({x:parseFloat(el.style.left),y:parseFloat(el.style.top)}));
+      localStorage.setItem(scaleKey, String(scale));
+      if(!moved && !wasPinching && onTap) onTap();
+      st=null; moved=false; wasPinching=false;
+    }
+  };
+  el.addEventListener('pointerup',end); el.addEventListener('pointercancel',end);
+}
+const expanded = {weather:false, transit:false, atis:false, prayer:false, clock:false, rain:false};
+
+/* ---- widgets ---- */
+function dot(ok){ return '<span class="dot '+(ok?'ok':'err')+'"></span>'; }
+
+let lastWeather=null;
+async function tickWeather(){
+  const el=$('#w-weather');
+  try{ const d=await api('/api/weather');
+    if(d.error) throw new Error(d.error);
+    lastWeather=d; renderWeather();
+  }catch(e){ el.innerHTML='<div class="lbl">'+dot(0)+CFG.city+'</div><div class="sm">'+e.message+'</div>'; }
+}
+function renderWeather(){
+  const el=$('#w-weather'), d=lastWeather; if(!d) return;
+  let h = '<div class="lbl">'+dot(1)+CFG.city+'</div>'+
+    '<div class="row"><span class="big">'+d.temp+'°</span> <span class="sm">'+d.precip+' mm · '+d.desc+'</span></div>';
+  if(expanded.weather){
+    h += '<div class="row sm">feels '+d.feels+'° · '+d.humidity+'% humidity · '+d.cloud+'% cloud</div>'+
+         '<div class="row sm">wind '+d.windDir+'° '+d.windSpeed+' km/h, gusts '+d.windGust+' · '+d.pressure+' hPa</div>';
+  }
+  el.innerHTML=h;
+  renderRain();
+}
+
+function renderRain(){
+  const el=$('#w-rain'), d=lastWeather; if(!d) return;
+  let h = '<div class="lbl">'+dot(1)+'Rain (12h)</div>';
+  if(d.rainExpected){
+    h += '<div class="row"><span class="big alc">&#9748; rain in '+d.rainIn+'h</span> '+
+         '<span class="sm">'+d.rainMaxProb+'% · '+d.rainTotal+' mm</span></div>';
+  } else {
+    h += '<div class="row"><span class="big okc">no rain</span> <span class="sm">'+d.rainMaxProb+'% max chance</span></div>';
+  }
+  if(expanded.rain){
+    h += '<div class="row sm" style="white-space:normal">'+
+      d.rainHours.map(x=>x.t+' '+x.prob+'%/'+x.mm+'mm').join(' &nbsp; ')+'</div>';
+  }
+  el.innerHTML=h;
+}
+
+let lastTransit=null;
+async function tickTransit(){
+  const el=$('#w-transit');
+  try{ const d=await api('/api/transit');
+    if(d.error) throw new Error(d.error);
+    lastTransit=d; renderTransit();
+  }catch(e){ el.innerHTML='<div class="lbl">'+dot(0)+'Transit</div><div class="sm">'+e.message+'</div>'; }
+}
+function renderTransit(){
+  const el=$('#w-transit'), d=lastTransit; if(!d) return;
+  const station = d.station || 'Transit'; // nearest real stop to the live GPS fix, not a fixed name
+  const list = expanded.transit ? d.next : d.perLine;
+  let h='<div class="lbl">'+dot(1)+station+'</div>';
+  if(!list.length){
+    h += '<div class="sm">no departures nearby</div>';
+  } else {
+    list.forEach(r=>{
+      const late = r.cancelled ? '<span class="alc"> cancelled</span>'
+                 : r.delay>0 ? '<span class="cau"> +'+r.delay+'</span>' : '';
+      h+='<div class="row"><span class="acc">'+r.line+'</span> '+r.dest+
+         ' <span class="md">'+hhmm(r.at)+'</span>'+late+'</div>';
+    });
+  }
+  if(expanded.transit) h += renderRouteLine();
+  el.innerHTML=h;
+}
+
+let lastRoute=null;
+async function tickRoute(){
+  try{ const d=await api('/api/route'); if(!d.error) lastRoute=d; if(expanded.transit) renderTransit(); }catch(e){}
+}
+function renderRouteLine(){
+  const rt=lastRoute; if(!rt) return '';
+  if(rt.sameStation) return '<div class="row sm">already at '+CFG.home+'</div>';
+  if(!rt.legs || !rt.legs.length) return '';
+  const legsStr = rt.legs.map(l=>{
+    const fp = (l.fromPlatform!=null) ? ' Pl.'+l.fromPlatform : '';
+    return '<span class="acc">'+l.line+'</span> '+hhmm(l.depAt)+fp+' &rarr; '+l.to;
+  }).join(' &nbsp;&middot;&nbsp; ');
+  return '<div class="row sm" style="white-space:normal">&#8618; '+CFG.home+': '+legsStr+
+    ' &nbsp;&middot;&nbsp; arr '+hhmm(rt.arriveAt)+' ('+rt.durationMin+'m)</div>';
+}
+
+let lastAtis=null;
+async function tickAtis(){
+  const el=$('#w-atis');
+  try{ const d=await api('/api/metar');
+    if(d.error) throw new Error(d.error);
+    lastAtis=d; renderAtis();
+  }catch(e){ el.innerHTML='<div class="lbl">'+dot(0)+CFG.icao+'</div><div class="sm">'+e.message+'</div>'; }
+}
+function renderAtis(){
+  const el=$('#w-atis'), d=lastAtis; if(!d) return;
+  const c = d.rules==='VFR'?'okc':d.rules==='MVFR'?'cau':'alc';
+  let h='<div class="lbl">'+dot(1)+CFG.icao+'</div>'+
+    '<div class="row"><span class="md '+c+'">'+d.rules+'</span> <span class="sm">'+d.summary+'</span></div>';
+  if(expanded.atis){
+    h += '<div class="row sm">temp '+d.temp+'° · dewpoint '+d.dewpoint+'°'+(d.gust?(' · gust '+d.gust):'')+'</div>';
+    if(d.clouds.length) h += '<div class="row sm">clouds '+d.clouds.join(', ')+'</div>';
+    if(d.wx.length) h += '<div class="row sm">wx '+d.wx.join(', ')+'</div>';
+    if(d.remarks) h += '<div class="row sm">'+d.remarks+'</div>';
+    h += '<div class="row sm">'+d.raw+'</div>';
+  }
+  el.innerHTML=h;
+}
+
+let prayerNext=null, prayerAll=null, chimeOn=true, chimedFor=null;
+function chime(){
+  try{ const C=window.AudioContext||window.webkitAudioContext; const ctx=new C();
+    [880,660,880].forEach((f,i)=>{ const o=ctx.createOscillator(),g=ctx.createGain();
+      o.type='sine'; o.frequency.value=f; const t=ctx.currentTime+i*.5;
+      g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(.2,t+.05);
+      g.gain.exponentialRampToValueAtTime(.001,t+.9);
+      o.connect(g).connect(ctx.destination); o.start(t); o.stop(t+1); });
+  }catch(e){}
+}
+async function loadPrayer(){
+  try{ const d=await api('/api/prayer'); if(!d.error){ prayerNext=d.next; prayerAll=d.all; } }catch(e){}
+}
+function renderPrayer(){
+  const el=$('#w-prayer');
+  if(!prayerNext){ el.innerHTML='<div class="lbl">'+dot(0)+'Prayer</div><div class="sm">unavailable</div>'; return; }
+  const left=prayerNext.at-Date.now();
+  if(left<=0){ loadPrayer(); return; }
+  const h=Math.floor(left/3600000), m=Math.floor(left%3600000/60000), s=Math.floor(left%60000/1000);
+  const cd = h>0 ? h+'h '+pad(m)+'m' : pad(m)+':'+pad(s);
+  const key=prayerNext.name+prayerNext.at;
+  if(chimeOn && left<=600000 && chimedFor!==key){ chimedFor=key; chime(); }
+  let hh='<div class="lbl">'+dot(1)+'Prayer <button id="chime">'+(chimeOn?'♪ on':'♪ off')+'</button></div>'+
+    '<div class="row"><span class="md">'+prayerNext.name+'</span> <span class="acc">'+cd+'</span>'+
+    ' <span class="sm">'+hhmm(prayerNext.at)+'</span></div>';
+  if(expanded.prayer && prayerAll){
+    hh += '<div class="row sm">'+prayerAll.map(p=>p.name+' '+hhmm(p.at)).join(' &nbsp;·&nbsp; ')+'</div>';
+  }
+  el.innerHTML=hh;
+  $('#chime').onclick=e=>{ e.stopPropagation(); chimeOn=!chimeOn; };
+}
+
+// Web Mercator, in CSS-px units at the given zoom (256px tiles) — same
+// projection Windy/Leaflet use internally. There's no API to read Windy's
+// actual pan/zoom state back out of its iframe, so this assumes the map1
+// backdrop is still centered on CFG at MAP1_ZOOM (true right after load;
+// drifts out of alignment if the now-interactive backdrop gets panned/zoomed).
+const MAP1_ZOOM = 8;
+function mercPx(lat, lon, zoom){
+  const s = Math.min(Math.max(Math.sin(lat*Math.PI/180), -0.9999), 0.9999);
+  const W = 256 * Math.pow(2, zoom);
+  return [W*(0.5+lon/360), W*(0.5 - Math.log((1+s)/(1-s))/(4*Math.PI))];
+}
+
+async function tickFlights(){
+  try{ const d=await api('/api/flights');
+    if(d.error){
+      $('#blips').innerHTML=''; $('#fblips2').innerHTML='';
+      $('#ftab').innerHTML='<tr><td colspan="4" class="sm">'+d.error+'</td></tr>';
+      return;
+    }
+    const g=$('#blips'); g.innerHTML='';
+    d.flights.forEach(f=>{
+      const x=200+((f.lon-CFG.lon)/(0.7*1.4))*190, y=200-((f.lat-CFG.lat)/0.7)*190;
+      g.innerHTML+='<g transform="translate('+x.toFixed(1)+','+y.toFixed(1)+') rotate('+(f.hdg||0)+')">'+
+        '<path d="M0,-6 L4,5 L0,2 L-4,5 Z" class="'+(f.ground?'gnd':'blip')+'"/></g>';
+    });
+    $('#ftab').innerHTML=d.flights.slice(0,15).map(f=>'<tr><td>'+f.cs+'</td><td>'+
+      (f.ground?'gnd':Math.round(f.alt||0))+'</td><td>'+Math.round(f.spd||0)+'</td><td>'+
+      Math.round(f.hdg||0)+'°</td></tr>').join('');
+
+    const ov = $('#flightOverlay'), fg = $('#fblips2');
+    const rect = ov.getBoundingClientRect();
+    if(rect.width && rect.height){
+      const cx = rect.width/2, cy = rect.height/2;
+      const [ccx,ccy] = mercPx(CFG.lat, CFG.lon, MAP1_ZOOM);
+      let html='';
+      d.flights.forEach(f=>{
+        const [fx,fy] = mercPx(f.lat, f.lon, MAP1_ZOOM);
+        const x = cx+(fx-ccx), y = cy+(fy-ccy);
+        html += '<g transform="translate('+x.toFixed(1)+','+y.toFixed(1)+') rotate('+(f.hdg||0)+')">'+
+          '<path d="M0,-9 L6,7 L0,3 L-6,7 Z" class="'+(f.ground?'fgnd':'fblip')+'"/></g>';
+      });
+      fg.innerHTML = html;
+    }
+  }catch(e){}
+}
+
+/* ---- boot ---- */
+function windy(ov,z,inter){
+  return '<iframe src="https://embed.windy.com/embed2.html?lat='+CFG.lat+
+    '&lon='+CFG.lon+'&detailLat='+CFG.lat+'&detailLon='+CFG.lon+'&zoom='+z+
+    '&level=surface&overlay='+ov+'&menu=&message='+inter+'&marker=true&calendar=now'+
+    '&pressure=true&type=map&location=coordinates&metricWind=default&metricTemp=default"></iframe>';
+}
+// 'temp' instead of 'radar': radar is mostly flat grey with no precipitation
+// nearby (which is most of the time), making the backdrop and everything
+// drawn over it harder to read. Temperature is a colorful gradient always.
+const MAP1_OVERLAY = 'temp';
+
+// GPS updates land in SitrepApi on the native side every few minutes; this
+// just notices when /api/config's lat/lon moved meaningfully (~1km+) and
+// recenters the map backdrop the same way the reset-view button does.
+async function tickConfig(){
+  try{
+    const c = await api('/api/config');
+    if(c.error) return;
+    const moved = CFG && (Math.abs(c.lat-CFG.lat)>0.01 || Math.abs(c.lon-CFG.lon)>0.01);
+    CFG = c;
+    if(moved) $('#map1').innerHTML = windy(MAP1_OVERLAY,8,'false');
+  }catch(e){}
+}
+
+(async function(){
+  CFG = await api('/api/config');
+  $('#map1').innerHTML = windy(MAP1_OVERLAY,8,'false');
+  $('#resetMapBtn').onclick = ()=>{ $('#map1').innerHTML = windy(MAP1_OVERLAY,8,'false'); };
+  $('#refreshFlightsBtn').onclick = ()=>{ tickFlights(); };
+
+  applyResponsiveDefaults();
+
+  draggable($('#w-weather'), ()=>{ expanded.weather=!expanded.weather; renderWeather(); });
+  draggable($('#w-transit'), ()=>{ expanded.transit=!expanded.transit; renderTransit(); if(expanded.transit) tickRoute(); });
+  draggable($('#w-clock'),   ()=>{ expanded.clock=!expanded.clock; renderBigClock(); });
+  draggable($('#w-atis'),    ()=>{ expanded.atis=!expanded.atis; renderAtis(); });
+  draggable($('#w-prayer'),  ()=>{ expanded.prayer=!expanded.prayer; renderPrayer(); });
+  draggable($('#w-rain'),    ()=>{ expanded.rain=!expanded.rain; renderRain(); });
+
+  // Polling cadence, slowest to fastest: weather barely changes minute-to-minute
+  // and is the biggest battery/network cost to poll often, so it's least frequent.
+  // The GPS-driven route home is next since it only needs to track your
+  // position (which itself only refreshes every 8 min — see LocationTracker).
+  // Live departures are the most time-critical (missing a train has a real
+  // cost), so that stays fast.
+  setInterval(tickConfig, 120000);
+  tickWeather(); setInterval(tickWeather, 900000);
+  tickTransit(); setInterval(tickTransit, 30000);
+  tickRoute();   setInterval(tickRoute, 360000);
+  tickAtis();    setInterval(tickAtis, 600000);
+  loadPrayer();  setInterval(loadPrayer, 3600000);
+  setInterval(renderPrayer, 1000);
+  renderBigClock(); setInterval(renderBigClock, 1000);
+  tickFlights(); setInterval(tickFlights, 1200000);
+  // All of these timers are frozen while the app is off screen (MainActivity
+  // pauses the WebView). On return, catch up at once instead of waiting for
+  // each timer. Flights are left to their own 20-min timer: OpenSky's daily
+  // quota is too small to spend on every app open.
+  window.sitrepResume = () => { tickConfig(); tickWeather(); tickTransit(); tickRoute(); tickAtis(); loadPrayer(); };
+})();
+</script></body></html>

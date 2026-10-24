@@ -1,0 +1,6 @@
+<resources>
+    <style name="Theme.Sitrep" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:statusBarColor">#0B0E11</item>
+        <item name="android:windowBackground">#0B0E11</item>
+    </style>
+</resources>

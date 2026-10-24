@@ -1,0 +1,27 @@
+# Only the three projects belong in this repository; everything else in this
+# folder (Android SDK/JDK/Gradle, portable git/gh, editor settings) stays local.
+/*
+!/.gitignore
+!/README.md
+!/sitrep/
+!/sitrep-android/
+!/sitrep-ulm/
+
+# Personal values (API token, home/work stops, medication defaults).
+# Each project ships a local_config.example.json to copy from.
+**/local_config.json
+
+# Build output and local machine paths
+**/build/
+**/.gradle/
+**/dist/
+**/__pycache__/
+**/local.properties
+*.apk
+*.aab
+.idea/
+*.iml
+
+# Agent working notes and device screenshots
+**/CLAUDE.md
+*.png

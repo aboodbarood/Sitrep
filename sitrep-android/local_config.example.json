@@ -1,0 +1,10 @@
+{
+  "icao": "EDDM",
+  "avwxToken": "",
+  "prayerMethod": 3,
+  "home": {
+    "globalId": "de:09162:2", "name": "Marienplatz",
+    "lat": 48.137245, "lon": 11.575421, "radiusM": 400,
+    "lines": []
+  }
+}
