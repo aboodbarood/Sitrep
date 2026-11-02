@@ -45,6 +45,8 @@ object MedStore {
 
     @Volatile var meds: List<Med> = emptyList()
     @Volatile var leadMin: Int = DEFAULT_LEAD_MIN
+    /** Reminders still post, but without sound, vibration or repeat. */
+    @Volatile var silent: Boolean = false
     private val taken = HashSet<String>()
 
     private fun prefs(c: Context) = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -62,6 +64,7 @@ object MedStore {
             }
         } catch (_: Exception) { emptyList() }
         leadMin = p.getInt("lead", DEFAULT_LEAD_MIN)
+        silent = p.getBoolean("silent", false)
         synchronized(taken) {
             taken.clear()
             taken.addAll(p.getStringSet("taken", emptySet()) ?: emptySet())
@@ -81,11 +84,13 @@ object MedStore {
             list.add(Med(o.optString("id", "").ifEmpty { UUID.randomUUID().toString() }, name, time, o.optBoolean("enabled", true)))
         }
         val lead = body.optInt("lead", DEFAULT_LEAD_MIN).coerceIn(0, 120)
+        val quiet = body.optBoolean("silent", silent)
         prefs(context).edit()
             .putString("meds", JSONArray(list.map { it.toJson() }).toString())
             .putInt("lead", lead)
+            .putBoolean("silent", quiet)
             .apply()
-        meds = list; leadMin = lead
+        meds = list; leadMin = lead; silent = quiet
     }
 
     fun isTaken(id: String, date: LocalDate) = synchronized(taken) { takenKey(id, date) in taken }

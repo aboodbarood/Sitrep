@@ -25,6 +25,8 @@ import java.time.ZonedDateTime
  */
 object MedAlarms {
     const val CHANNEL_ID = "sitrep_med_alarm"
+    // A channel's sound can't be changed once created, so "silence" uses its own.
+    const val SILENT_CHANNEL_ID = "sitrep_med_silent"
     const val EXTRA_ID = "medId"
     const val EXTRA_DATE = "doseDate"
     const val ACTION_TAKEN = "com.sitrep.ulm.MED_TAKEN"
@@ -85,6 +87,16 @@ object MedAlarms {
 
     fun ensureChannel(ctx: Context) {
         val mgr = ctx.getSystemService(NotificationManager::class.java)
+        if (mgr.getNotificationChannel(SILENT_CHANNEL_ID) == null) {
+            mgr.createNotificationChannel(
+                NotificationChannel(SILENT_CHANNEL_ID, "Medication reminder (silenced)", NotificationManager.IMPORTANCE_HIGH).apply {
+                    description = "Used instead of the alarm while it's silenced in the medication editor"
+                    setSound(null, null)
+                    enableVibration(false)
+                    lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+                }
+            )
+        }
         if (mgr.getNotificationChannel(CHANNEL_ID) != null) return
         val channel = NotificationChannel(CHANNEL_ID, "Medication alarm", NotificationManager.IMPORTANCE_HIGH).apply {
             description = "Rings before each daily medication time"
@@ -118,7 +130,8 @@ object MedAlarms {
         // Round up: an alarm delivered a few seconds late should still say "10 min", not "9".
         val secs = java.time.Duration.between(java.time.LocalDateTime.now(), doseAt).seconds.coerceAtLeast(0)
         val mins = (secs + 59) / 60
-        val n = NotificationCompat.Builder(ctx, CHANNEL_ID)
+        val silent = MedStore.silent
+        val n = NotificationCompat.Builder(ctx, if (silent) SILENT_CHANNEL_ID else CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
             .setContentTitle("💊 ${med.name} at $hhmm")
             .setContentText(if (mins > 0) "Take it in $mins min" else "Take it now")
@@ -129,9 +142,10 @@ object MedAlarms {
             .setAutoCancel(false)
             .addAction(0, "Taken", action(ACTION_TAKEN, 0x1000_0000))
             .addAction(0, "Snooze $SNOOZE_MIN min", action(ACTION_SNOOZE, 0x2000_0000))
+            .setSilent(silent)
             .build()
         // Keep ringing until it's acknowledged, like an alarm clock rather than a ping.
-        n.flags = n.flags or Notification.FLAG_INSISTENT
+        if (!silent) n.flags = n.flags or Notification.FLAG_INSISTENT
         ctx.getSystemService(NotificationManager::class.java).notify(notifId(med.id), n)
     }
 }
