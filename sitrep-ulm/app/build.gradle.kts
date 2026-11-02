@@ -15,8 +15,8 @@ android {
         // targeting 35 caps dataSync foreground services at 6h per 24h, which
         // would kill the always-on lock-screen summary every afternoon.
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0-ulm"
+        versionCode = 2
+        versionName = "1.1-ulm"
     }
 
     buildTypes {

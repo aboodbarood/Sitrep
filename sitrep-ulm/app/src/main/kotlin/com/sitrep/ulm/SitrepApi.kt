@@ -468,6 +468,7 @@ object SitrepApi {
     /** Schedule, today's doses with taken-marks, and the next dose, for the widget and its editor. */
     fun meds(): JSONObject = JSONObject().apply {
         put("lead", MedStore.leadMin)
+        put("silent", MedStore.silent)
         put("meds", JSONArray(MedStore.meds.map { it.toJson() }))
         put("today", JSONArray(MedStore.todayDoses().map { doseJson(it) }))
         put("next", MedStore.nextDose()?.let { doseJson(it) } ?: JSONObject.NULL)

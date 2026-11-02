@@ -101,6 +101,8 @@ padding:.6rem .9rem;font-size:.95rem;cursor:pointer}
 .sheet .actions .primary{flex:1}
 .sheet .msg{font-family:var(--mono);font-size:.85rem;color:var(--muted);margin:.4rem 0}
 .sheet .medrow{margin-top:.6rem}
+.sheet label.chk{display:flex;gap:.5rem;align-items:center;color:var(--text);font-size:.85rem;cursor:pointer}
+.sheet label.chk input{flex:none;padding:0;width:1.2rem;height:1.2rem;accent-color:var(--accent)}
 .sheet .medrow input[type=time]{flex:none;width:7.2rem}
 .sheet .medrow .rm{flex:none;padding:.6rem .75rem}
 /* "taken" button inside the medication widget — the one control on the map layer */
@@ -178,6 +180,7 @@ border:1px solid var(--ok);border-radius:6px;padding:.15rem .5rem;margin-left:.3
     <button type="button" id="medAdd" style="margin-top:.5rem">+ Add medication</button>
     <label for="medLead">Alarm, minutes before</label>
     <div class="srow"><input id="medLead" type="number" inputmode="numeric" min="0" max="120" style="flex:none;width:6rem"></div>
+    <label class="chk"><input id="medSilent" type="checkbox"> Silence alarm (reminder shows, no sound or vibration)</label>
     <div class="msg" id="medMsg"></div>
     <div class="actions">
       <button class="primary" id="medSave">Save</button>
@@ -485,7 +488,7 @@ function renderMeds(){
   if(expanded.meds){
     h+='<div class="row sm" style="white-space:normal">'+MEDS.today.map(d=>
       (d.taken?'<span class="okc">&#10003;</span> ':'')+esc(d.name)+' '+esc(d.time)).join(' &nbsp;·&nbsp; ')+'</div>'+
-      '<div class="row sm">alarm '+MEDS.lead+' min before</div>';
+      '<div class="row sm">alarm '+MEDS.lead+' min before'+(MEDS.silent?' (silenced)':'')+'</div>';
   }
   setMedHtml(el,h);
 }
@@ -515,6 +518,7 @@ function openMedSheet(){
   const box=$('#medRows'); box.innerHTML='';
   (MEDS&&MEDS.meds.length ? MEDS.meds : [{}]).forEach(m=>box.appendChild(medRow(m)));
   $('#medLead').value = MEDS ? MEDS.lead : 10;
+  $('#medSilent').checked = !!(MEDS && MEDS.silent);
   $('#medMsg').textContent='';
   $('#medSheet').classList.add('on');
 }
@@ -529,7 +533,7 @@ $('#medSave').onclick=async ()=>{
   })).filter(m=>m.name);
   if(meds.some(m=>!/^\d\d:\d\d$/.test(m.time))){ $('#medMsg').textContent='every medication needs a time'; return; }
   const lead=Math.max(0,Math.min(120,parseInt($('#medLead').value,10)||0));
-  const d=await api('/api/meds',{method:'POST',headers:JSON_HDR,body:JSON.stringify({lead,meds})});
+  const d=await api('/api/meds',{method:'POST',headers:JSON_HDR,body:JSON.stringify({lead,meds,silent:$('#medSilent').checked})});
   if(d.error){ $('#medMsg').textContent=d.error; return; }
   MEDS=d; closeMedSheet(); renderMeds();
 };

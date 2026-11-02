@@ -11,7 +11,8 @@ that serves `assets/index.html` and answers its `/api/*` calls from
 - **Best way home** — you set an address, pick a nearby station; shows the
   earliest-arriving connection (first departure, platform, arrival) and later options
 - **Best way to work** — the same to a fixed stop from `local_config.json`
-- **Medication** — daily doses with an exact alarm before each (Taken / Snooze),
+- **Medication** — daily doses with an exact alarm before each (Taken / Snooze;
+  can be silenced in the 💊 editor so it only shows a quiet reminder),
   next dose on the lock screen
 - Lock-screen summary notification; weather map tab (Windy)
 - Location: automatic (Wi-Fi/cell, GPS only as a fallback) or manual (📍 button)
