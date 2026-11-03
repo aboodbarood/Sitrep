@@ -6,6 +6,7 @@
 !/sitrep/
 !/sitrep-android/
 !/sitrep-ulm/
+!/.github/
 
 # Personal values (API token, home/work stops, medication defaults).
 # Each project ships a local_config.example.json to copy from.
